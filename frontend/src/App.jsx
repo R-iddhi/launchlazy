@@ -36,14 +36,21 @@ function parseAIAnalysis(text = "") {
   const getSection = (start, end) => {
     const startIndex = text.indexOf(start);
 
-    if (startIndex === -1) return "";
+    if (startIndex === -1) {
+      return "";
+    }
 
-    const contentStart = startIndex + start.length;
+    const contentStart =
+      startIndex + start.length;
 
     let endIndex = text.length;
 
     if (end) {
-      const foundEnd = text.indexOf(end, contentStart);
+      const foundEnd =
+        text.indexOf(
+          end,
+          contentStart
+        );
 
       if (foundEnd !== -1) {
         endIndex = foundEnd;
@@ -51,145 +58,273 @@ function parseAIAnalysis(text = "") {
     }
 
     return text
-      .slice(contentStart, endIndex)
+      .slice(
+        contentStart,
+        endIndex
+      )
       .trim();
   };
 
-  result.assessment = getSection(
-    headings[0],
-    headings[1]
-  );
+  result.assessment =
+    getSection(
+      headings[0],
+      headings[1]
+    );
 
-  result.priority = getSection(
-    headings[1],
-    headings[2]
-  );
+  result.priority =
+    getSection(
+      headings[1],
+      headings[2]
+    );
 
-  result.why = getSection(
-    headings[2],
-    headings[3]
-  );
+  result.why =
+    getSection(
+      headings[2],
+      headings[3]
+    );
 
-  const manualText = getSection(
-    headings[3],
-    headings[4]
-  );
+  const manualText =
+    getSection(
+      headings[3],
+      headings[4]
+    );
 
-  result.manualChecks = manualText
-    .split("\n")
-    .map((item) =>
-      item
-        .replace(/^[-•]\s*/, "")
-        .trim()
-    )
-    .filter(Boolean);
+  result.manualChecks =
+    manualText
+      .split("\n")
+      .map((item) =>
+        item
+          .replace(
+            /^[-•]\s*/,
+            ""
+          )
+          .trim()
+      )
+      .filter(Boolean);
 
-  const actionText = getSection(
-    headings[4],
-    null
-  );
+  const actionText =
+    getSection(
+      headings[4],
+      null
+    );
 
-  result.nextActions = actionText
-    .split("\n")
-    .map((item) =>
-      item
-        .replace(/^\d+[.)]\s*/, "")
-        .trim()
-    )
-    .filter(Boolean);
+  result.nextActions =
+    actionText
+      .split("\n")
+      .map((item) =>
+        item
+          .replace(
+            /^\d+[.)]\s*/,
+            ""
+          )
+          .trim()
+      )
+      .filter(Boolean);
 
   return result;
 }
 
 
 function App() {
-  const [projectPath, setProjectPath] = useState("");
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [
+    projectPath,
+    setProjectPath,
+  ] = useState("");
+
+  const [
+    result,
+    setResult,
+  ] = useState(null);
+
+  const [
+    error,
+    setError,
+  ] = useState("");
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(false);
+
+  const [
+    aiLoading,
+    setAiLoading,
+  ] = useState(false);
 
 
-  const inspectProject = async () => {
-    if (!projectPath.trim()) {
-      setError("Please enter a project folder path.");
-      return;
-    }
+  const inspectProject =
+    async () => {
+      if (!projectPath.trim()) {
+        setError(
+          "Please enter a project folder path."
+        );
 
-    try {
-      setError("");
-      setResult(null);
-      setLoading(true);
+        return;
+      }
 
-      const response = await axios.post(
-        `${API_URL}/inspect`,
-        {
-          path: projectPath,
-        }
-      );
+      try {
+        setError("");
+        setResult(null);
 
-      setResult(response.data);
-    } catch (err) {
-      setError(
-        err.response?.data?.detail ||
-          "Could not inspect the project folder."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+        setLoading(true);
+        setAiLoading(false);
 
+        const response =
+          await axios.post(
+            `${API_URL}/inspect`,
+            {
+              path: projectPath,
+            }
+          );
 
-  const getScoreLabel = (score) => {
-    if (score >= 90) return "Strong";
-    if (score >= 70) return "Needs Attention";
+        const scanResult =
+          response.data;
 
-    return "High Risk";
-  };
+        setResult({
+          ...scanResult,
+          ai_analysis: "",
+        });
 
+        setLoading(false);
+        setAiLoading(true);
 
-  const downloadReport = () => {
-    if (!result) return;
+        try {
+          const aiResponse =
+            await axios.post(
+              `${API_URL}/analyze-ai`,
+              {
+                project_name:
+                  scanResult.project_name,
 
-    const componentText =
-      result.components?.length > 0
-        ? result.components
-            .map(
-              (component) =>
-                `- ${component.path}: ${component.types.join(
-                  ", "
-                )}`
-            )
-            .join("\n")
-        : "- No components detected";
+                project_types:
+                  scanResult.project_types,
 
-    const riskText =
-      result.risks?.length > 0
-        ? result.risks
-            .map((risk, index) => {
-              const files =
-                risk.files?.length > 0
-                  ? `\n  Files: ${risk.files.join(
-                      ", "
-                    )}`
-                  : "";
+                components:
+                  scanResult.components,
 
-              return `${index + 1}. [${risk.severity.toUpperCase()}] ${
-                risk.title
+                important_files:
+                  scanResult.important_files,
+
+                launch_readiness_score:
+                  scanResult.launch_readiness_score,
+
+                priority:
+                  scanResult.priority,
+
+                risks:
+                  scanResult.risks,
               }
+            );
+
+          setResult(
+            (current) => ({
+              ...current,
+
+              ai_analysis:
+                aiResponse.data
+                  .ai_analysis,
+            })
+          );
+
+        } catch (aiError) {
+          setResult(
+            (current) => ({
+              ...current,
+
+              ai_analysis:
+                "AI analysis unavailable. Scanner results are still valid.",
+            })
+          );
+
+        } finally {
+          setAiLoading(false);
+        }
+
+      } catch (err) {
+        setError(
+          err.response?.data
+            ?.detail ||
+            "Could not inspect the project folder."
+        );
+
+        setLoading(false);
+        setAiLoading(false);
+      }
+    };
+
+
+  const getScoreLabel =
+    (score) => {
+      if (score >= 90) {
+        return "Strong";
+      }
+
+      if (score >= 70) {
+        return "Needs Attention";
+      }
+
+      return "High Risk";
+    };
+
+
+  const downloadReport =
+    () => {
+      if (!result) {
+        return;
+      }
+
+      const componentText =
+        result.components?.length >
+        0
+          ? result.components
+              .map(
+                (component) =>
+                  `- ${component.path}: ${component.types.join(
+                    ", "
+                  )}`
+              )
+              .join("\n")
+          : "- No components detected";
+
+      const riskText =
+        result.risks?.length >
+        0
+          ? result.risks
+              .map(
+                (
+                  risk,
+                  index
+                ) => {
+                  const files =
+                    risk.files?.length >
+                    0
+                      ? `\n  Files: ${risk.files.join(
+                          ", "
+                        )}`
+                      : "";
+
+                  return `${index + 1}. [${risk.severity.toUpperCase()}] ${
+                    risk.title
+                  }
 Reason: ${risk.reason}
 Fix: ${risk.fix}${files}`;
-            })
-            .join("\n\n")
-        : "No automated launch risks detected.";
+                }
+              )
+              .join("\n\n")
+          : "No automated launch risks detected.";
 
-    const fileText =
-      result.important_files?.length > 0
-        ? result.important_files
-            .map((file) => `- ${file}`)
-            .join("\n")
-        : "- No important files detected";
+      const fileText =
+        result.important_files
+          ?.length > 0
+          ? result.important_files
+              .map(
+                (file) =>
+                  `- ${file}`
+              )
+              .join("\n")
+          : "- No important files detected";
 
-    const report = `# LaunchLazy Launch Readiness Report
+      const report = `# LaunchLazy Launch Readiness Report
 
 ## Project
 
@@ -208,9 +343,14 @@ It is not a guarantee of production readiness, security, or correctness.
 
 ## Detected Technology Stack
 
-${result.project_types
-  ?.map((type) => `- ${type}`)
-  .join("\n")}
+${
+  result.project_types
+    ?.map(
+      (type) =>
+        `- ${type}`
+    )
+    .join("\n")
+}
 
 ## Detected Components
 
@@ -222,7 +362,10 @@ ${riskText}
 
 ## AI Launch Assessment
 
-${result.ai_analysis}
+${
+  result.ai_analysis ||
+  "AI assessment was not generated."
+}
 
 ## Important Project Files
 
@@ -234,36 +377,48 @@ Generated by LaunchLazy
 Local reasoning model: Qwen 2.5
 `;
 
-    const blob = new Blob(
-      [report],
-      {
-        type: "text/markdown;charset=utf-8",
-      }
-    );
+      const blob =
+        new Blob(
+          [report],
+          {
+            type:
+              "text/markdown;charset=utf-8",
+          }
+        );
 
-    const url =
-      URL.createObjectURL(blob);
+      const url =
+        URL.createObjectURL(
+          blob
+        );
 
-    const link =
-      document.createElement("a");
+      const link =
+        document.createElement(
+          "a"
+        );
 
-    link.href = url;
+      link.href = url;
 
-    link.download =
-      `${result.project_name}-launchlazy-report.md`;
+      link.download =
+        `${result.project_name}-launchlazy-report.md`;
 
-    document.body.appendChild(link);
+      document.body.appendChild(
+        link
+      );
 
-    link.click();
+      link.click();
 
-    document.body.removeChild(link);
+      document.body.removeChild(
+        link
+      );
 
-    URL.revokeObjectURL(url);
-  };
+      URL.revokeObjectURL(
+        url
+      );
+    };
 
 
   const ai =
-    result
+    result?.ai_analysis
       ? parseAIAnalysis(
           result.ai_analysis
         )
@@ -274,6 +429,7 @@ Local reasoning model: Qwen 2.5
     <div className="app-shell">
 
       <header className="topbar">
+
         <div>
           <div className="brand">
             LaunchLazy
@@ -285,9 +441,13 @@ Local reasoning model: Qwen 2.5
         </div>
 
         <div className="local-ai-badge">
+
           <span className="status-dot" />
+
           Local AI · Qwen 2.5
+
         </div>
+
       </header>
 
 
@@ -300,16 +460,21 @@ Local reasoning model: Qwen 2.5
           </p>
 
           <h1>
-            Find launch risks before your
-            project leaves localhost.
+            Find launch risks before
+            your project leaves
+            localhost.
           </h1>
 
           <p className="hero-copy">
-            Inspect your software architecture,
-            configuration and launch readiness
-            using deterministic checks and
-            grounded local AI reasoning.
+            Inspect your software
+            architecture,
+            configuration and
+            launch readiness using
+            deterministic checks
+            and grounded local AI
+            reasoning.
           </p>
+
 
           <div className="scanner">
 
@@ -323,7 +488,8 @@ Local reasoning model: Qwen 2.5
               placeholder="C:\Users\...\my-project"
               onKeyDown={(e) => {
                 if (
-                  e.key === "Enter"
+                  e.key ===
+                  "Enter"
                 ) {
                   inspectProject();
                 }
@@ -340,11 +506,21 @@ Local reasoning model: Qwen 2.5
               }
             >
               {loading
-                ? "Analyzing..."
+                ? "Scanning Project..."
                 : "Inspect Project"}
             </button>
 
           </div>
+
+
+          {loading && (
+            <div className="scan-loading-message">
+              Scanning project
+              structure and running
+              automated checks...
+            </div>
+          )}
+
 
           {error && (
             <div className="error-box">
@@ -361,16 +537,21 @@ Local reasoning model: Qwen 2.5
             <section className="result-toolbar">
 
               <div>
+
                 <p className="eyebrow">
                   ANALYSIS COMPLETE
                 </p>
 
                 <p className="toolbar-copy">
-                  Review verified findings or
-                  export the complete launch
-                  report.
+                  Automated scanner
+                  results are ready.
+                  Review the findings
+                  while local AI prepares
+                  the assessment.
                 </p>
+
               </div>
+
 
               <button
                 className="download-button"
@@ -393,25 +574,35 @@ Local reasoning model: Qwen 2.5
                 </p>
 
                 <h2>
-                  {result.project_name}
+                  {
+                    result.project_name
+                  }
                 </h2>
 
                 <p className="muted path-text">
-                  {result.project_path}
+                  {
+                    result.project_path
+                  }
                 </p>
+
 
                 <div className="stack-list">
 
-                  {result.project_types?.map(
-                    (type) => (
-                      <span
-                        className="stack-badge"
-                        key={type}
-                      >
-                        {type}
-                      </span>
-                    )
-                  )}
+                  {result.project_types
+                    ?.map(
+                      (type) => (
+                        <span
+                          className="stack-badge"
+                          key={
+                            type
+                          }
+                        >
+                          {
+                            type
+                          }
+                        </span>
+                      )
+                    )}
 
                 </div>
 
@@ -425,6 +616,7 @@ Local reasoning model: Qwen 2.5
                 </p>
 
                 <div className="score-number">
+
                   {
                     result.launch_readiness_score
                   }
@@ -432,12 +624,15 @@ Local reasoning model: Qwen 2.5
                   <span>
                     /100
                   </span>
+
                 </div>
 
                 <p className="score-label">
+
                   {getScoreLabel(
                     result.launch_readiness_score
                   )}
+
                 </p>
 
               </div>
@@ -457,18 +652,24 @@ Local reasoning model: Qwen 2.5
                   }
                 </div>
 
+
                 <p className="muted">
+
                   {
                     result.risks_found
                   }{" "}
+
                   automated risk
+
                   {
                     result.risks_found ===
                     1
                       ? ""
                       : "s"
                   }{" "}
+
                   detected
+
                 </p>
 
               </div>
@@ -481,6 +682,7 @@ Local reasoning model: Qwen 2.5
               <div className="section-heading">
 
                 <div>
+
                   <p className="eyebrow">
                     ARCHITECTURE MAP
                   </p>
@@ -488,6 +690,7 @@ Local reasoning model: Qwen 2.5
                   <h2>
                     Detected Components
                   </h2>
+
                 </div>
 
               </div>
@@ -496,7 +699,10 @@ Local reasoning model: Qwen 2.5
               <div className="component-flow">
 
                 {result.components?.map(
-                  (component, index) => (
+                  (
+                    component,
+                    index
+                  ) => (
 
                     <div
                       className="component-wrapper"
@@ -506,31 +712,44 @@ Local reasoning model: Qwen 2.5
                       <div className="card component-card">
 
                         <div className="component-icon">
-                          {index === 0
-                            ? "UI"
-                            : "API"}
+
+                          {
+                            index === 0
+                              ? "UI"
+                              : "API"
+                          }
+
                         </div>
+
 
                         <div>
 
                           <p className="component-number">
+
                             COMPONENT{" "}
+
                             {String(
-                              index + 1
+                              index +
+                                1
                             ).padStart(
                               2,
                               "0"
                             )}
+
                           </p>
 
+
                           <h3>
+
                             {
                               component.path ===
                               "."
                                 ? "Project Root"
                                 : component.path
                             }
+
                           </h3>
+
 
                           <div className="stack-list">
 
@@ -538,6 +757,7 @@ Local reasoning model: Qwen 2.5
                               (
                                 type
                               ) => (
+
                                 <span
                                   className="stack-badge"
                                   key={
@@ -548,6 +768,7 @@ Local reasoning model: Qwen 2.5
                                     type
                                   }
                                 </span>
+
                               )
                             )}
 
@@ -562,9 +783,11 @@ Local reasoning model: Qwen 2.5
                         result.components
                           .length -
                           1 && (
+
                         <div className="flow-arrow">
                           →
                         </div>
+
                       )}
 
                     </div>
@@ -593,11 +816,15 @@ Local reasoning model: Qwen 2.5
 
                 </div>
 
+
                 <span className="risk-count">
+
                   {
                     result.risks_found
                   }{" "}
+
                   found
+
                 </span>
 
               </div>
@@ -616,7 +843,9 @@ Local reasoning model: Qwen 2.5
 
                       <div
                         className={`card risk-card risk-${risk.severity}`}
-                        key={index}
+                        key={
+                          index
+                        }
                       >
 
                         <div className="risk-top">
@@ -630,7 +859,9 @@ Local reasoning model: Qwen 2.5
                           </span>
 
                           <span className="risk-number">
+
                             #
+
                             {String(
                               index +
                                 1
@@ -638,6 +869,7 @@ Local reasoning model: Qwen 2.5
                               2,
                               "0"
                             )}
+
                           </span>
 
                         </div>
@@ -648,6 +880,7 @@ Local reasoning model: Qwen 2.5
                             risk.title
                           }
                         </h3>
+
 
                         <p>
                           {
@@ -682,6 +915,7 @@ Local reasoning model: Qwen 2.5
                                 (
                                   file
                                 ) => (
+
                                   <code
                                     key={
                                       file
@@ -691,6 +925,7 @@ Local reasoning model: Qwen 2.5
                                       file
                                     }
                                   </code>
+
                                 )
                               )}
 
@@ -720,10 +955,11 @@ Local reasoning model: Qwen 2.5
                     </h3>
 
                     <p>
-                      No risks were found by the
-                      currently implemented scanner.
-                      Manual verification is still
-                      required.
+                      No risks were found
+                      by the currently
+                      implemented scanner.
+                      Manual verification
+                      is still required.
                     </p>
 
                   </div>
@@ -772,9 +1008,10 @@ Local reasoning model: Qwen 2.5
                   </strong>
 
                   <p>
-                    Qwen receives verified scanner
-                    findings instead of inspecting
-                    your project blindly.
+                    Qwen receives verified
+                    scanner findings instead
+                    of inspecting your project
+                    blindly.
                   </p>
 
                 </div>
@@ -782,143 +1019,220 @@ Local reasoning model: Qwen 2.5
               </div>
 
 
-              <div className="ai-dashboard">
+              {aiLoading ? (
 
-                <div className="ai-card-main">
+                <div className="ai-loading-state">
 
-                  <p className="ai-label">
-                    OVERALL ASSESSMENT
-                  </p>
+                  <div className="ai-loading-dot" />
 
-                  <h3>
-                    Project Launch Review
-                  </h3>
+                  <div>
 
-                  <p>
-                    {
-                      ai?.assessment ||
-                      "Assessment unavailable."
-                    }
-                  </p>
+                    <strong>
+                      Generating AI assessment...
+                    </strong>
+
+                    <p>
+                      Scanner results are ready.
+                      Qwen is now reviewing the
+                      verified findings and preparing
+                      the next actions.
+                    </p>
+
+                  </div>
 
                 </div>
 
+              ) : result.ai_analysis ? (
 
-                <div className="ai-mini-grid">
+                <div className="ai-dashboard">
 
-                  <div className="ai-mini-card">
+                  <div className="ai-card-main">
 
                     <p className="ai-label">
-                      PRIORITY
+                      OVERALL ASSESSMENT
                     </p>
 
-                    <div
-                      className={`ai-priority priority-${result.priority?.toLowerCase()}`}
-                    >
+                    <h3>
+                      Project Launch Review
+                    </h3>
+
+                    <p>
                       {
-                        ai?.priority ||
-                        result.priority
+                        ai?.assessment ||
+                        result.ai_analysis
                       }
+                    </p>
+
+                  </div>
+
+
+                  <div className="ai-mini-grid">
+
+                    <div className="ai-mini-card">
+
+                      <p className="ai-label">
+                        PRIORITY
+                      </p>
+
+                      <div
+                        className={`ai-priority priority-${result.priority?.toLowerCase()}`}
+                      >
+                        {
+                          ai?.priority ||
+                          result.priority
+                        }
+                      </div>
+
+                    </div>
+
+
+                    <div className="ai-mini-card">
+
+                      <p className="ai-label">
+                        WHY THIS SCORE
+                      </p>
+
+                      <p>
+                        {
+                          ai?.why ||
+                          "Score explanation unavailable."
+                        }
+                      </p>
+
                     </div>
 
                   </div>
 
 
-                  <div className="ai-mini-card">
+                  <div className="ai-two-column">
 
-                    <p className="ai-label">
-                      WHY THIS SCORE
-                    </p>
+                    <div className="ai-check-panel">
 
-                    <p>
-                      {
-                        ai?.why ||
-                        "Score explanation unavailable."
-                      }
-                    </p>
-
-                  </div>
-
-                </div>
+                      <p className="ai-label">
+                        MANUAL VERIFICATION
+                      </p>
 
 
-                <div className="ai-two-column">
+                      <div className="check-list">
 
-                  <div className="ai-check-panel">
+                        {ai?.manualChecks
+                          ?.length >
+                        0 ? (
 
-                    <p className="ai-label">
-                      MANUAL VERIFICATION
-                    </p>
+                          ai.manualChecks.map(
+                            (
+                              check,
+                              index
+                            ) => (
 
-                    <div className="check-list">
+                              <div
+                                className="check-item"
+                                key={
+                                  index
+                                }
+                              >
 
-                      {ai?.manualChecks?.map(
-                        (
-                          check,
-                          index
-                        ) => (
+                                <span className="check-circle">
+                                  ○
+                                </span>
 
-                          <div
-                            className="check-item"
-                            key={index}
-                          >
+                                <span>
+                                  {
+                                    check
+                                  }
+                                </span>
+
+                              </div>
+
+                            )
+                          )
+
+                        ) : (
+
+                          <div className="check-item">
 
                             <span className="check-circle">
                               ○
                             </span>
 
                             <span>
-                              {
-                                check
-                              }
+                              Manual checks
+                              unavailable.
                             </span>
 
                           </div>
 
-                        )
-                      )}
+                        )}
+
+                      </div>
 
                     </div>
 
-                  </div>
+
+                    <div className="ai-action-panel">
+
+                      <p className="ai-label">
+                        RECOMMENDED ACTION PLAN
+                      </p>
 
 
-                  <div className="ai-action-panel">
+                      <div className="action-list">
 
-                    <p className="ai-label">
-                      RECOMMENDED ACTION PLAN
-                    </p>
+                        {ai?.nextActions
+                          ?.length >
+                        0 ? (
 
-                    <div className="action-list">
+                          ai.nextActions.map(
+                            (
+                              action,
+                              index
+                            ) => (
 
-                      {ai?.nextActions?.map(
-                        (
-                          action,
-                          index
-                        ) => (
+                              <div
+                                className="action-item"
+                                key={
+                                  index
+                                }
+                              >
 
-                          <div
-                            className="action-item"
-                            key={index}
-                          >
+                                <div className="action-number">
+
+                                  {
+                                    index +
+                                    1
+                                  }
+
+                                </div>
+
+                                <span>
+                                  {
+                                    action
+                                  }
+                                </span>
+
+                              </div>
+
+                            )
+                          )
+
+                        ) : (
+
+                          <div className="action-item">
 
                             <div className="action-number">
-                              {
-                                index +
-                                1
-                              }
+                              1
                             </div>
 
                             <span>
-                              {
-                                action
-                              }
+                              Review the detected
+                              risks above.
                             </span>
 
                           </div>
 
-                        )
-                      )}
+                        )}
+
+                      </div>
 
                     </div>
 
@@ -926,7 +1240,26 @@ Local reasoning model: Qwen 2.5
 
                 </div>
 
-              </div>
+              ) : (
+
+                <div className="ai-loading-state">
+
+                  <div>
+
+                    <strong>
+                      AI assessment unavailable
+                    </strong>
+
+                    <p>
+                      The deterministic scanner
+                      results above are still valid.
+                    </p>
+
+                  </div>
+
+                </div>
+
+              )}
 
             </section>
 
@@ -952,26 +1285,31 @@ Local reasoning model: Qwen 2.5
 
               <div className="card file-card">
 
-                {result.important_files?.map(
-                  (file) => (
+                {result.important_files
+                  ?.map(
+                    (file) => (
 
-                    <div
-                      className="file-row"
-                      key={file}
-                    >
+                      <div
+                        className="file-row"
+                        key={
+                          file
+                        }
+                      >
 
-                      <span className="file-icon">
-                        ◇
-                      </span>
+                        <span className="file-icon">
+                          ◇
+                        </span>
 
-                      <code>
-                        {file}
-                      </code>
+                        <code>
+                          {
+                            file
+                          }
+                        </code>
 
-                    </div>
+                      </div>
 
-                  )
-                )}
+                    )
+                  )}
 
               </div>
 
@@ -985,6 +1323,5 @@ Local reasoning model: Qwen 2.5
     </div>
   );
 }
-
 
 export default App;
